@@ -214,7 +214,30 @@ var ru = `
 `;
 
 class Line {
-    constructor(public en:TextLine, public ru:TextLine) {}
+    constructor(public en:TextLine = null, public ru:TextLine = null) {
+        if (!en) {
+            this.en = new TextLine(Lang.EN, null, null, null);
+        }
+        if (!ru) {
+            this.ru = new TextLine(Lang.RU, null, null, null);
+        }
+    }
+
+    getTextLine(lang:Lang) {
+        return lang == Lang.EN ? this.en : this.ru;
+    }
+
+    setTextLine(lang:Lang, textLine:TextLine) {
+        if (lang == Lang.EN) {
+            this.en = textLine;
+        } else {
+            this.ru = textLine;
+        }
+    }
+
+    getInvertTextLine(lang:Lang) {
+        return lang == Lang.RU ? this.en : this.ru;
+    }
 }
 
 enum Lang{
@@ -222,7 +245,7 @@ enum Lang{
     RU = 2
 }
 class TextLine {
-    words:Word[] = [];
+    words:Word[];
 
     getWord(i:number) {
         return this.words[i];
@@ -230,17 +253,16 @@ class TextLine {
 
     private text:string;
 
-    constructor(public lang:Lang, public start:number, public dur:number, text:string) {
-        this.setText(text);
+    constructor(public lang:Lang, public start:number, public dur:number, words:Word[]) {
+        this.setWords(words);
     }
 
-    setText(text:string) {
-        this.text = text;
-        this.words = text.split(/\s+/).map(w => new Word(w));
-    }
-
-    getText() {
-        return this.text;
+    setWords(words:Word[]) {
+        if (!words || words.length == 0) {
+            words = [new Word('\u00A0')];
+        }
+        this.words = words;
+        return this;
     }
 }
 
@@ -255,14 +277,19 @@ var enLinesS = parse(en);
 var ruLinesS = parse(ru);
 var lines = enLinesS.map((lineS, i) =>
     new Line(
-        new TextLine(Lang.EN, null, null, lineS),
-        new TextLine(Lang.RU, null, null, ruLinesS[i])));
+        new TextLine(Lang.EN, null, null, lineS.split(/\s+/).map(w => new Word(w))),
+        new TextLine(Lang.RU, null, null, ruLinesS[i].split(/\s+/).map(w => new Word(w)))));
 
 class Hello extends React.Component<{},{}> {
     lines:Line[] = lines;
-    selectedWordPos = 0;
+
+    getLinePos(line:Line) {
+        return this.lines.indexOf(line);
+    }
+
     selectedLine:Line;
     selectedTextLine:TextLine;
+    selectedWord:Word;
 
     findClosestNextWord(currWord:Word, nextTextLine:TextLine) {
         var currRect = currWord.span.getBoundingClientRect();
@@ -271,24 +298,63 @@ class Hello extends React.Component<{},{}> {
             var rect = w.span.getBoundingClientRect();
             var pos = rect.left + rect.width / 2;
             return {word: w, pos: i, diff: Math.abs(currPos - pos)};
-        }).sort((a, b) => a.diff < b.diff ? -1 : 1).shift().pos;
+        }).sort((a, b) => a.diff < b.diff ? -1 : 1).shift().word;
+    }
+
+    split(shift = false) {
+        if (shift && this.selectedWord == this.selectedTextLine.getWord(0)) {
+            return;
+        }
+        var currLang = this.selectedTextLine.lang;
+        var origWords = this.selectedTextLine.words;
+        var wordPos = origWords.indexOf(this.selectedWord);
+        var linePos = this.lines.indexOf(this.selectedLine);
+
+        if (shift) {
+            this.selectedTextLine.setWords(origWords.slice(0, wordPos));
+            var newLine = new Line();
+            this.lines.splice(linePos + 1, 0, newLine);
+        }
+        else {
+            this.lines.push(new Line());
+            for (var i = this.lines.length - 1; i > linePos; i--) {
+                this.lines[i].setTextLine(currLang, this.lines[i - 1].getTextLine(currLang));
+            }
+            this.selectedLine.setTextLine(currLang, new TextLine(currLang, null, null, origWords.slice(0, wordPos)));
+            var newLine = this.lines[linePos + 1];
+        }
+
+        this.selectedLine = newLine;
+        this.selectedTextLine = this.selectedLine.getTextLine(currLang).setWords(origWords.slice(wordPos));
+        this.selectedWord = this.selectedTextLine.getWord(0);
     }
 
     keyHandler = (e:KeyboardEvent) => {
         //console.log(e.keyCode);
+
         var handled = false;
         if (!this.selectedLine || !this.selectedTextLine) {
             this.selectedLine = this.lines[0];
             this.selectedTextLine = this.selectedLine.en;
         }
+        var wordPos = this.selectedTextLine.words.indexOf(this.selectedWord);
+
+        //enter without shift
+        if (e.keyCode == 13) {
+            //this.splitIntoNew();
+            this.split(e.shiftKey);
+            handled = true;
+        }
         //left
-        if (e.keyCode == 37 && this.selectedWordPos > 0) {
-            this.selectedWordPos--;
+        if (e.keyCode == 37 && wordPos > 0) {
+            var pos = this.selectedTextLine.words.indexOf(this.selectedWord);
+            this.selectedWord = this.selectedTextLine.getWord(pos - 1);
             handled = true;
         }
         //right
-        if (e.keyCode == 39 && this.selectedWordPos < this.selectedTextLine.words.length - 1) {
-            this.selectedWordPos++;
+        if (e.keyCode == 39 && wordPos < this.selectedTextLine.words.length - 1) {
+            var pos = this.selectedTextLine.words.indexOf(this.selectedWord);
+            this.selectedWord = this.selectedTextLine.getWord(pos + 1);
             handled = true;
         }
         // up down
@@ -321,13 +387,13 @@ class Hello extends React.Component<{},{}> {
             } else {
                 this.selectedTextLine = this.selectedLine.en;
             }
-            this.selectedWordPos = this.findClosestNextWord(oldTextLine.getWord(this.selectedWordPos), this.selectedTextLine);
+            this.selectedWord = this.findClosestNextWord(this.selectedWord, this.selectedTextLine);
             handled = true;
         }
         if (handled) {
             this.forceUpdate();
 
-            var wordSpan = this.selectedTextLine.getWord(this.selectedWordPos).span as HTMLElement;
+            var wordSpan = this.selectedWord.span as HTMLElement;
             var rect = wordSpan.getBoundingClientRect();
 
             if (rect.top < 0) {
@@ -345,18 +411,19 @@ class Hello extends React.Component<{},{}> {
         document.addEventListener('keydown', this.keyHandler);
     }
 
-    spanClassName(textLine:TextLine, wordPos:number) {
-        return classNames({'selected': this.selectedWordPos == wordPos && this.selectedTextLine == textLine});
+    spanClassName(textLine:TextLine, word:Word) {
+        return classNames({'selected': this.selectedWord == word && this.selectedTextLine == textLine});
     }
 
     setWordNode(word:Word, node:React.DOMComponent<{}>) {
         word.span = React.findDOMNode(node);
     }
 
-    wordClick(e: React.MouseEvent, line:Line, textLine:TextLine, wordPos:number) {
+    wordClick(e:React.MouseEvent, line:Line, textLine:TextLine, word:Word, wordPos:number) {
         this.selectedLine = line;
         this.selectedTextLine = textLine;
-        this.selectedWordPos = wordPos;
+        //this.selectedWordPos = wordPos;
+        this.selectedWord = word;
         this.forceUpdate();
         e.preventDefault();
         e.stopPropagation();
@@ -365,7 +432,8 @@ class Hello extends React.Component<{},{}> {
     textLineClick(line:Line, textLine:TextLine) {
         this.selectedTextLine = textLine;
         this.selectedLine = line;
-        this.selectedWordPos = 0;
+        this.selectedWord = textLine.getWord(0);
+        //this.selectedWordPos = 0;
         this.forceUpdate()
     }
 
@@ -374,13 +442,13 @@ class Hello extends React.Component<{},{}> {
             {this.lines.map(line => <div className="line">
                 <div className="textline en" onClick={()=>this.textLineClick(line, line.en)}>
                     {line.en.words.map((w,i) =>
-                    <span className={this.spanClassName(line.en, i)} ref={node => this.setWordNode(w, node)}
-                          onClick={e=>this.wordClick(e, line, line.en, i)}>{w.word}</span>)}
+                    <span className={this.spanClassName(line.en, w)} ref={node => this.setWordNode(w, node)}
+                          onClick={e=>this.wordClick(e, line, line.en, w, i)}>{w.word}</span>)}
                 </div>
                 <div className="textline ru" onClick={()=>this.textLineClick(line, line.ru)}>
                     {line.ru.words.map((w,i) =>
-                    <span className={this.spanClassName(line.ru, i)} ref={node => this.setWordNode(w, node)}
-                          onClick={e=>this.wordClick(e, line, line.ru, i)}>{w.word}</span>)}
+                    <span className={this.spanClassName(line.ru, w)} ref={node => this.setWordNode(w, node)}
+                          onClick={e=>this.wordClick(e, line, line.ru, w, i)}>{w.word}</span>)}
                 </div>
             </div>)}
         </div>

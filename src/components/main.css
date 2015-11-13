@@ -21,7 +21,8 @@
 }
 .line .textline span{
     cursor: default;
-    padding: 4px 2px;
+    padding: 4px 3px;
+    margin: 0 -1px;
 }
 .line .textline span.selected{
     background: lightskyblue;
