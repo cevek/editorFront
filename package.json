@@ -9,6 +9,7 @@
   "license": "ISC",
   "dependencies": {
     "babel-fast-react": "^1.0.0",
+    "classnames": "^2.2.0",
     "css-loader": "^0.22.0",
     "extract-text-webpack-plugin": "^0.9.1",
     "fast-react": "^1.0.1",

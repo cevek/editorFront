@@ -16,6 +16,7 @@
     "./typings/lib/lib.es6.d.ts",
     "./typings/lib/require.d.ts",
     "./typings/react/react.d.ts",
+    "./typings/classnames/classnames.d.ts",
     "./src/app.ts"
   ]
 }

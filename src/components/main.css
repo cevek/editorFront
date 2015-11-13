@@ -1,3 +1,25 @@
-div{
+.line{
+    border: 1px solid silver;
+    border-radius: 10px;
+    margin: 10px;
+    width: 500px;
+    background: #eee;
+    padding: 5px 15px;
+    text-align: center;
+}
 
+.line .textline{
+}
+
+.line .en{
+    font-size: 16px;
+}
+.line .ru{
+    font-size: 13px;
+}
+.line .textline span{
+    cursor: default;
+}
+.line .textline span.selected{
+    background: lightskyblue;
 }
