@@ -308,6 +308,20 @@ interface IModify {
     wordPos:number
 }
 
+const enum EditorAction{
+    SPLIT      = 1,
+    SPLIT_MOVE = 2,
+    JOIN       = 3,
+    JOIN_MOVE  = 4
+}
+
+class EditorHistory {
+    action:EditorAction;
+    linePos:number;
+    lang:Lang;
+    wordPos:number;
+}
+
 class Hello extends React.Component<{},{}> {
     lines:Line[] = lines;
 
@@ -337,7 +351,7 @@ class Hello extends React.Component<{},{}> {
 
     splitWithMove(m:IModify) {
         var lastLine = this.lines[this.lines.length - 1];
-        if (!lastLine.getTextLine(m.currLang).isEmpty()){
+        if (!lastLine.getTextLine(m.currLang).isEmpty()) {
             this.lines.push(new Line());
         }
         for (var i = this.lines.length - 1; i > m.linePos; i--) {
@@ -350,9 +364,10 @@ class Hello extends React.Component<{},{}> {
         selLine.setWords(m.origWords.slice(m.wordPos));
 
         this.setSelection(newLine, selLine, selLine.getWord(0));
+        this.addUndo({action: EditorAction.SPLIT_MOVE, lang: m.currLang, linePos: m.linePos, wordPos: m.wordPos});
     }
 
-    undoSplitWithMove(modify:IModify) {
+    undoSplitWithMove(undoItem:EditorHistory) {
 
     }
 
@@ -363,9 +378,10 @@ class Hello extends React.Component<{},{}> {
 
         var selLine = newLine.getTextLine(m.currLang).setWords(m.origWords.slice(m.wordPos));
         this.setSelection(newLine, selLine, selLine.getWord(0));
+        this.addUndo({action: EditorAction.SPLIT, lang: m.currLang, linePos: m.linePos, wordPos: m.wordPos});
     }
 
-    undoSplitIntoNewLine(modify:IModify) {
+    undoSplitIntoNewLine(undoItem:EditorHistory) {
 
     }
 
@@ -380,11 +396,25 @@ class Hello extends React.Component<{},{}> {
         prevLine.setTextLine(m.currLang, textLine);
         m.textLine.setWords(null);
         this.setSelection(prevLine, textLine, textLine.getWord(prevWords.length - (prevWords[0].isEmpty ? 1 : 0)));
+        this.addUndo({action: EditorAction.JOIN, lang: m.currLang, linePos: m.linePos, wordPos: m.wordPos});
         return true;
     }
 
-    undoJoinLine(modify:IModify) {
+    undoJoinLine(undoItem:EditorHistory) {
+        this.joinLineWithMove(this.undoToModify(undoItem));
+    }
 
+    undoToModify(undoItem:EditorHistory) {
+        var line = this.lines[undoItem.linePos];
+        var textLine = line.getTextLine(undoItem.lang);
+        return {
+            line: line,
+            linePos: undoItem.linePos,
+            textLine: textLine,
+            origWords: textLine.words,
+            currLang: undoItem.lang,
+            wordPos: undoItem.wordPos
+        };
     }
 
     joinLineWithMove(m:IModify) {
@@ -397,11 +427,38 @@ class Hello extends React.Component<{},{}> {
             if (lastLine.isEmpty()) {
                 this.lines.pop();
             }
+            //remove joinLine undo
+            this.undoStack.pop();
+            this.addUndo({action: EditorAction.JOIN_MOVE, lang: m.currLang, linePos: m.linePos, wordPos: m.wordPos});
         }
     }
 
-    undoJoinLineWithMove(modify:IModify) {
+    undoJoinLineWithMove(undoItem:EditorHistory) {
 
+    }
+
+    addUndo(undo:EditorHistory) {
+        this.undoStack.push(undo);
+    }
+
+    undoStack:EditorHistory[] = [];
+
+    undo() {
+        var undoItem = this.undoStack.pop();
+        switch (undoItem.action) {
+            case EditorAction.JOIN:
+                this.undoJoinLine(undoItem);
+                break;
+            case EditorAction.JOIN_MOVE:
+                this.undoJoinLineWithMove(undoItem);
+                break;
+            case EditorAction.SPLIT:
+                this.undoSplitIntoNewLine(undoItem);
+                break;
+            case EditorAction.SPLIT_MOVE:
+                this.undoSplitWithMove(undoItem);
+                break;
+        }
     }
 
     keyHandler = (e:KeyboardEvent) => {
@@ -442,6 +499,11 @@ class Hello extends React.Component<{},{}> {
             else {
                 this.joinLineWithMove(modify);
             }
+            handled = true;
+        }
+
+        if (e.keyCode == 90 && (e.metaKey || e.ctrlKey)) {
+            this.undo();
             handled = true;
         }
 
