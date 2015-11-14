@@ -240,7 +240,7 @@ class Line {
     }
 }
 
-enum Lang{
+const enum Lang{
     EN = 1,
     RU = 2
 }
@@ -258,8 +258,12 @@ class TextLine {
     }
 
     setWords(words:Word[]) {
-        if (!words || words.length == 0) {
-            words = [new Word('\u00A0')];
+        if (!words) {
+            words = [];
+        }
+        words = words.filter(w => w.word.trim() != '');
+        if (words.length == 0) {
+            words = [new Word(null)];
         }
         this.words = words;
         return this;
@@ -267,7 +271,14 @@ class TextLine {
 }
 
 class Word {
-    constructor(public word:string, public span:Element = null) {}
+    isEmpty = false;
+
+    constructor(public word:string, public span:Element = null) {
+        if (word == null) {
+            this.isEmpty = true;
+            this.word = '\u00A0';
+        }
+    }
 }
 
 function parse(s:string) {
@@ -279,6 +290,15 @@ var lines = enLinesS.map((lineS, i) =>
     new Line(
         new TextLine(Lang.EN, null, null, lineS.split(/\s+/).map(w => new Word(w))),
         new TextLine(Lang.RU, null, null, ruLinesS[i].split(/\s+/).map(w => new Word(w)))));
+
+interface IModify {
+    line:Line;
+    linePos:number;
+    textLine:TextLine;
+    origWords:Word[];
+    currLang:Lang;
+    wordPos:number
+}
 
 class Hello extends React.Component<{},{}> {
     lines:Line[] = lines;
@@ -301,58 +321,125 @@ class Hello extends React.Component<{},{}> {
         }).sort((a, b) => a.diff < b.diff ? -1 : 1).shift().word;
     }
 
-    split(shift = false) {
-        if (shift && this.selectedWord == this.selectedTextLine.getWord(0)) {
+    setSelection(line:Line, textLine:TextLine, word:Word) {
+        this.selectedLine = line;
+        this.selectedTextLine = textLine;
+        this.selectedWord = word;
+    }
+
+    splitWithMove(m:IModify) {
+        this.lines.push(new Line());
+        for (var i = this.lines.length - 1; i > m.linePos; i--) {
+            this.lines[i].setTextLine(m.currLang, this.lines[i - 1].getTextLine(m.currLang));
+        }
+        m.line.setTextLine(m.currLang, new TextLine(m.currLang, null, null, m.origWords.slice(0, m.wordPos)));
+
+        var newLine = this.lines[m.linePos + 1];
+        var selLine = newLine.getTextLine(m.currLang);
+        selLine.setWords(m.origWords.slice(m.wordPos));
+
+        this.setSelection(newLine, selLine, selLine.getWord(0));
+    }
+
+    undoSplitWithMove(modify:IModify) {
+
+    }
+
+    splitIntoNewLine(m:IModify) {
+        if (m.wordPos == 0) {
             return;
         }
-        var currLang = this.selectedTextLine.lang;
-        var origWords = this.selectedTextLine.words;
-        var wordPos = origWords.indexOf(this.selectedWord);
-        var linePos = this.lines.indexOf(this.selectedLine);
+        m.textLine.setWords(m.origWords.slice(0, m.wordPos));
+        var newLine = new Line();
+        this.lines.splice(m.linePos + 1, 0, newLine);
 
-        if (shift) {
-            this.selectedTextLine.setWords(origWords.slice(0, wordPos));
-            var newLine = new Line();
-            this.lines.splice(linePos + 1, 0, newLine);
+        var selLine = newLine.getTextLine(m.currLang).setWords(m.origWords.slice(m.wordPos));
+        this.setSelection(newLine, selLine, selLine.getWord(0));
+    }
+
+    undoSplitIntoNewLine(modify:IModify) {
+
+    }
+
+    joinLine(m:IModify) {
+        if (m.linePos < 1) {
+            return false;
         }
-        else {
-            this.lines.push(new Line());
-            for (var i = this.lines.length - 1; i > linePos; i--) {
-                this.lines[i].setTextLine(currLang, this.lines[i - 1].getTextLine(currLang));
+        var prevLine = this.lines[m.linePos - 1];
+        var prevWords = prevLine.getTextLine(m.currLang).words;
+        var newWords = [...prevWords, ...m.origWords];
+        var textLine = new TextLine(m.currLang, null, null, newWords);
+        prevLine.setTextLine(m.currLang, textLine);
+        m.textLine.setWords(null);
+        this.setSelection(prevLine, textLine, textLine.getWord(prevWords.length - (prevWords[0].isEmpty ? 1 : 0)));
+        return true;
+    }
+
+    undoJoinLine(modify:IModify) {
+
+    }
+
+    joinLineWithMove(m:IModify) {
+        if (this.joinLine(m)) {
+            for (var i = m.linePos + 1; i < this.lines.length; i++) {
+                this.lines[i - 1].setTextLine(m.currLang, this.lines[i].getTextLine(m.currLang));
             }
-            this.selectedLine.setTextLine(currLang, new TextLine(currLang, null, null, origWords.slice(0, wordPos)));
-            var newLine = this.lines[linePos + 1];
         }
+    }
 
-        this.selectedLine = newLine;
-        this.selectedTextLine = this.selectedLine.getTextLine(currLang).setWords(origWords.slice(wordPos));
-        this.selectedWord = this.selectedTextLine.getWord(0);
+    undoJoinLineWithMove(modify:IModify) {
+
     }
 
     keyHandler = (e:KeyboardEvent) => {
-        //console.log(e.keyCode);
+        console.log(e.keyCode);
 
         var handled = false;
         if (!this.selectedLine || !this.selectedTextLine) {
             this.selectedLine = this.lines[0];
             this.selectedTextLine = this.selectedLine.en;
         }
-        var wordPos = this.selectedTextLine.words.indexOf(this.selectedWord);
+
+        var modify:IModify = {
+            currLang: this.selectedTextLine.lang,
+            origWords: this.selectedTextLine.words,
+            wordPos: this.selectedTextLine.words.indexOf(this.selectedWord),
+            linePos: this.lines.indexOf(this.selectedLine),
+            line: this.selectedLine,
+            textLine: this.selectedTextLine
+
+        };
 
         //enter without shift
         if (e.keyCode == 13) {
-            //this.splitIntoNew();
-            this.split(e.shiftKey);
+            if (e.shiftKey) {
+                this.splitIntoNewLine(modify);
+            }
+            else {
+                this.splitWithMove(modify);
+            }
             handled = true;
         }
+
+        //backspace
+        if (e.keyCode == 8) {
+            if (e.shiftKey) {
+                this.joinLine(modify);
+            }
+            else {
+                this.joinLineWithMove(modify);
+            }
+            handled = true;
+        }
+
         //left
-        if (e.keyCode == 37 && wordPos > 0) {
+        if (e.keyCode == 37 && modify.wordPos > 0) {
             var pos = this.selectedTextLine.words.indexOf(this.selectedWord);
             this.selectedWord = this.selectedTextLine.getWord(pos - 1);
             handled = true;
         }
         //right
-        if (e.keyCode == 39 && wordPos < this.selectedTextLine.words.length - 1) {
+        if (e.keyCode == 39 && modify.wordPos < this.selectedTextLine.words.length - 1) {
             var pos = this.selectedTextLine.words.indexOf(this.selectedWord);
             this.selectedWord = this.selectedTextLine.getWord(pos + 1);
             handled = true;
