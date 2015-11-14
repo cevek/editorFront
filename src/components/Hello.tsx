@@ -227,6 +227,10 @@ class Line {
         return lang == Lang.EN ? this.en : this.ru;
     }
 
+    isEmpty() {
+        return this.en.isEmpty() && this.ru.isEmpty();
+    }
+
     setTextLine(lang:Lang, textLine:TextLine) {
         if (lang == Lang.EN) {
             this.en = textLine;
@@ -249,6 +253,10 @@ class TextLine {
 
     getWord(i:number) {
         return this.words[i];
+    }
+
+    isEmpty() {
+        return this.getWord(0).isEmpty;
     }
 
     private text:string;
@@ -328,7 +336,10 @@ class Hello extends React.Component<{},{}> {
     }
 
     splitWithMove(m:IModify) {
-        this.lines.push(new Line());
+        var lastLine = this.lines[this.lines.length - 1];
+        if (!lastLine.getTextLine(m.currLang).isEmpty()){
+            this.lines.push(new Line());
+        }
         for (var i = this.lines.length - 1; i > m.linePos; i--) {
             this.lines[i].setTextLine(m.currLang, this.lines[i - 1].getTextLine(m.currLang));
         }
@@ -346,9 +357,6 @@ class Hello extends React.Component<{},{}> {
     }
 
     splitIntoNewLine(m:IModify) {
-        if (m.wordPos == 0) {
-            return;
-        }
         m.textLine.setWords(m.origWords.slice(0, m.wordPos));
         var newLine = new Line();
         this.lines.splice(m.linePos + 1, 0, newLine);
@@ -383,6 +391,11 @@ class Hello extends React.Component<{},{}> {
         if (this.joinLine(m)) {
             for (var i = m.linePos + 1; i < this.lines.length; i++) {
                 this.lines[i - 1].setTextLine(m.currLang, this.lines[i].getTextLine(m.currLang));
+            }
+            var lastLine = this.lines[this.lines.length - 1];
+            lastLine.setTextLine(m.currLang, new TextLine(m.currLang, null, null, null));
+            if (lastLine.isEmpty()) {
+                this.lines.pop();
             }
         }
     }
