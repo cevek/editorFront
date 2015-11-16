@@ -373,11 +373,13 @@ class Hello extends React.Component<{},{}> {
 
     splitIntoNewLine(m:IModify) {
         m.textLine.setWords(m.origWords.slice(0, m.wordPos));
-        var newLine = new Line();
-        this.lines.splice(m.linePos + 1, 0, newLine);
-
-        var selLine = newLine.getTextLine(m.currLang).setWords(m.origWords.slice(m.wordPos));
-        this.setSelection(newLine, selLine, selLine.getWord(0));
+        var nextLine = this.lines[m.linePos + 1];
+        if (!nextLine.getTextLine(m.currLang).isEmpty()) {
+            nextLine = new Line();
+            this.lines.splice(m.linePos + 1, 0, nextLine);
+        }
+        var selLine = nextLine.getTextLine(m.currLang).setWords(m.origWords.slice(m.wordPos));
+        this.setSelection(nextLine, selLine, selLine.getWord(0));
         return {action: EditorAction.SPLIT, lang: m.currLang, linePos: m.linePos + 1, wordPos: 0};
     }
 
@@ -395,6 +397,9 @@ class Hello extends React.Component<{},{}> {
         var textLine = new TextLine(m.currLang, null, null, newWords);
         prevLine.setTextLine(m.currLang, textLine);
         m.textLine.setWords(null);
+        if (m.line.isEmpty()) {
+            this.lines.splice(m.linePos, 1);
+        }
         var newWordPos = prevWords.length - (prevWords[0].isEmpty ? 1 : 0);
         this.setSelection(prevLine, textLine, textLine.getWord(newWordPos));
         return {action: EditorAction.JOIN, lang: m.currLang, linePos: m.linePos - 1, wordPos: newWordPos};
