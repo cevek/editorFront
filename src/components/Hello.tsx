@@ -378,11 +378,11 @@ class Hello extends React.Component<{},{}> {
 
         var selLine = newLine.getTextLine(m.currLang).setWords(m.origWords.slice(m.wordPos));
         this.setSelection(newLine, selLine, selLine.getWord(0));
-        return {action: EditorAction.SPLIT, lang: m.currLang, linePos: m.linePos, wordPos: m.wordPos};
+        return {action: EditorAction.SPLIT, lang: m.currLang, linePos: m.linePos + 1, wordPos: 0};
     }
 
     undoSplitIntoNewLine(undoItem:EditorHistory) {
-
+        this.joinLine(this.undoToModify(undoItem));
     }
 
     joinLine(m:IModify) {
@@ -401,7 +401,7 @@ class Hello extends React.Component<{},{}> {
     }
 
     undoJoinLine(undoItem:EditorHistory) {
-
+        this.splitIntoNewLine(this.undoToModify(undoItem));
     }
 
     undoToModify(undoItem:EditorHistory) {
