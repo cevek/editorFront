@@ -364,11 +364,11 @@ class Hello extends React.Component<{},{}> {
         selLine.setWords(m.origWords.slice(m.wordPos));
 
         this.setSelection(newLine, selLine, selLine.getWord(0));
-        this.addUndo({action: EditorAction.SPLIT_MOVE, lang: m.currLang, linePos: m.linePos, wordPos: m.wordPos});
+        return {action: EditorAction.SPLIT_MOVE, lang: m.currLang, linePos: m.linePos + 1, wordPos: 0};
     }
 
     undoSplitWithMove(undoItem:EditorHistory) {
-
+        this.joinLineWithMove(this.undoToModify(undoItem));
     }
 
     splitIntoNewLine(m:IModify) {
@@ -378,7 +378,7 @@ class Hello extends React.Component<{},{}> {
 
         var selLine = newLine.getTextLine(m.currLang).setWords(m.origWords.slice(m.wordPos));
         this.setSelection(newLine, selLine, selLine.getWord(0));
-        this.addUndo({action: EditorAction.SPLIT, lang: m.currLang, linePos: m.linePos, wordPos: m.wordPos});
+        return {action: EditorAction.SPLIT, lang: m.currLang, linePos: m.linePos, wordPos: m.wordPos};
     }
 
     undoSplitIntoNewLine(undoItem:EditorHistory) {
@@ -387,7 +387,7 @@ class Hello extends React.Component<{},{}> {
 
     joinLine(m:IModify) {
         if (m.linePos < 1) {
-            return false;
+            return null;
         }
         var prevLine = this.lines[m.linePos - 1];
         var prevWords = prevLine.getTextLine(m.currLang).words;
@@ -395,13 +395,13 @@ class Hello extends React.Component<{},{}> {
         var textLine = new TextLine(m.currLang, null, null, newWords);
         prevLine.setTextLine(m.currLang, textLine);
         m.textLine.setWords(null);
-        this.setSelection(prevLine, textLine, textLine.getWord(prevWords.length - (prevWords[0].isEmpty ? 1 : 0)));
-        this.addUndo({action: EditorAction.JOIN, lang: m.currLang, linePos: m.linePos, wordPos: m.wordPos});
-        return true;
+        var newWordPos = prevWords.length - (prevWords[0].isEmpty ? 1 : 0);
+        this.setSelection(prevLine, textLine, textLine.getWord(newWordPos));
+        return {action: EditorAction.JOIN, lang: m.currLang, linePos: m.linePos - 1, wordPos: newWordPos};
     }
 
     undoJoinLine(undoItem:EditorHistory) {
-        this.joinLineWithMove(this.undoToModify(undoItem));
+
     }
 
     undoToModify(undoItem:EditorHistory) {
@@ -418,7 +418,8 @@ class Hello extends React.Component<{},{}> {
     }
 
     joinLineWithMove(m:IModify) {
-        if (this.joinLine(m)) {
+        var undo = this.joinLine(m);
+        if (undo) {
             for (var i = m.linePos + 1; i < this.lines.length; i++) {
                 this.lines[i - 1].setTextLine(m.currLang, this.lines[i].getTextLine(m.currLang));
             }
@@ -427,37 +428,48 @@ class Hello extends React.Component<{},{}> {
             if (lastLine.isEmpty()) {
                 this.lines.pop();
             }
-            //remove joinLine undo
-            this.undoStack.pop();
-            this.addUndo({action: EditorAction.JOIN_MOVE, lang: m.currLang, linePos: m.linePos, wordPos: m.wordPos});
+            undo.action = EditorAction.JOIN_MOVE;
+            return undo;
         }
     }
 
     undoJoinLineWithMove(undoItem:EditorHistory) {
-
+        this.splitWithMove(this.undoToModify(undoItem));
+        /*this.splitWithMove(this.undoToModify({
+            action: undoItem.action,
+            linePos: undoItem.linePos,
+            lang: undoItem.lang,
+            wordPos: undoItem.wordPos
+        }));*/
     }
 
     addUndo(undo:EditorHistory) {
-        this.undoStack.push(undo);
+        if (undo) {
+            console.log("Action", undo);
+            this.undoStack.push(undo);
+        }
     }
 
     undoStack:EditorHistory[] = [];
 
     undo() {
         var undoItem = this.undoStack.pop();
-        switch (undoItem.action) {
-            case EditorAction.JOIN:
-                this.undoJoinLine(undoItem);
-                break;
-            case EditorAction.JOIN_MOVE:
-                this.undoJoinLineWithMove(undoItem);
-                break;
-            case EditorAction.SPLIT:
-                this.undoSplitIntoNewLine(undoItem);
-                break;
-            case EditorAction.SPLIT_MOVE:
-                this.undoSplitWithMove(undoItem);
-                break;
+        if (undoItem) {
+            console.log("Undo", undoItem);
+            switch (undoItem.action) {
+                case EditorAction.JOIN:
+                    this.undoJoinLine(undoItem);
+                    break;
+                case EditorAction.JOIN_MOVE:
+                    this.undoJoinLineWithMove(undoItem);
+                    break;
+                case EditorAction.SPLIT:
+                    this.undoSplitIntoNewLine(undoItem);
+                    break;
+                case EditorAction.SPLIT_MOVE:
+                    this.undoSplitWithMove(undoItem);
+                    break;
+            }
         }
     }
 
@@ -483,10 +495,10 @@ class Hello extends React.Component<{},{}> {
         //enter without shift
         if (e.keyCode == 13) {
             if (e.shiftKey) {
-                this.splitIntoNewLine(modify);
+                this.addUndo(this.splitIntoNewLine(modify));
             }
             else {
-                this.splitWithMove(modify);
+                this.addUndo(this.splitWithMove(modify));
             }
             handled = true;
         }
@@ -494,10 +506,10 @@ class Hello extends React.Component<{},{}> {
         //backspace
         if (e.keyCode == 8) {
             if (e.shiftKey) {
-                this.joinLine(modify);
+                this.addUndo(this.joinLine(modify));
             }
             else {
-                this.joinLineWithMove(modify);
+                this.addUndo(this.joinLineWithMove(modify));
             }
             handled = true;
         }
