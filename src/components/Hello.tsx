@@ -322,16 +322,42 @@ class EditorHistory {
     wordPos:number;
 }
 
-class Hello extends React.Component<{},{}> {
-    lines:Line[] = lines;
+class Selection {
+    line:Line;
+    linePos:number;
+    textLine:TextLine;
+    lang:Lang;
+    word:Word;
+    wordPos:number;
 
-    getLinePos(line:Line) {
-        return this.lines.indexOf(line);
+    constructor(public lines:Line[]) {}
+
+    set(linePos:number, lang:Lang, wordPos:number) {
+        this.setLine(linePos);
+        this.setLang(lang);
+        this.setWord(wordPos);
     }
 
-    selectedLine:Line;
-    selectedTextLine:TextLine;
-    selectedWord:Word;
+    setLine(linePos:number) {
+        this.linePos = linePos;
+        this.line = this.lines[linePos];
+    }
+
+    setLang(lang:Lang) {
+        this.lang = lang;
+        this.textLine = this.line.getTextLine(lang);
+    }
+
+    setWord(wordPos:number) {
+        this.wordPos = wordPos;
+        this.word = this.textLine.getWord(wordPos);
+    }
+
+}
+
+class Hello extends React.Component<{},{}> {
+    lines:Line[] = lines;
+    selection = new Selection(this.lines);
 
     findClosestNextWord(currWord:Word, nextTextLine:TextLine) {
         var currRect = currWord.span.getBoundingClientRect();
@@ -340,13 +366,7 @@ class Hello extends React.Component<{},{}> {
             var rect = w.span.getBoundingClientRect();
             var pos = rect.left + rect.width / 2;
             return {word: w, pos: i, diff: Math.abs(currPos - pos)};
-        }).sort((a, b) => a.diff < b.diff ? -1 : 1).shift().word;
-    }
-
-    setSelection(line:Line, textLine:TextLine, word:Word) {
-        this.selectedLine = line;
-        this.selectedTextLine = textLine;
-        this.selectedWord = word;
+        }).sort((a, b) => a.diff < b.diff ? -1 : 1).shift().pos;
     }
 
     splitWithMove(m:IModify) {
@@ -359,12 +379,13 @@ class Hello extends React.Component<{},{}> {
         }
         m.line.setTextLine(m.currLang, new TextLine(m.currLang, null, null, m.origWords.slice(0, m.wordPos)));
 
-        var newLine = this.lines[m.linePos + 1];
+        var nextLinePos = m.linePos + 1;
+        var newLine = this.lines[nextLinePos];
         var selLine = newLine.getTextLine(m.currLang);
         selLine.setWords(m.origWords.slice(m.wordPos));
 
-        this.setSelection(newLine, selLine, selLine.getWord(0));
-        return {action: EditorAction.SPLIT_MOVE, lang: m.currLang, linePos: m.linePos + 1, wordPos: 0};
+        this.selection.set(nextLinePos, m.currLang, 0);
+        return {action: EditorAction.SPLIT_MOVE, lang: m.currLang, linePos: nextLinePos, wordPos: 0};
     }
 
     undoSplitWithMove(undoItem:EditorHistory) {
@@ -373,14 +394,15 @@ class Hello extends React.Component<{},{}> {
 
     splitIntoNewLine(m:IModify) {
         m.textLine.setWords(m.origWords.slice(0, m.wordPos));
-        var nextLine = this.lines[m.linePos + 1];
+        var nextLinePos = m.linePos + 1;
+        var nextLine = this.lines[nextLinePos];
         if (!nextLine.getTextLine(m.currLang).isEmpty()) {
             nextLine = new Line();
-            this.lines.splice(m.linePos + 1, 0, nextLine);
+            this.lines.splice(nextLinePos, 0, nextLine);
         }
-        var selLine = nextLine.getTextLine(m.currLang).setWords(m.origWords.slice(m.wordPos));
-        this.setSelection(nextLine, selLine, selLine.getWord(0));
-        return {action: EditorAction.SPLIT, lang: m.currLang, linePos: m.linePos + 1, wordPos: 0};
+        nextLine.getTextLine(m.currLang).setWords(m.origWords.slice(m.wordPos));
+        this.selection.set(nextLinePos, m.currLang, 0);
+        return {action: EditorAction.SPLIT, lang: m.currLang, linePos: nextLinePos, wordPos: 0};
     }
 
     undoSplitIntoNewLine(undoItem:EditorHistory) {
@@ -391,7 +413,8 @@ class Hello extends React.Component<{},{}> {
         if (m.linePos < 1) {
             return null;
         }
-        var prevLine = this.lines[m.linePos - 1];
+        var prevLinePos = m.linePos - 1;
+        var prevLine = this.lines[prevLinePos];
         var prevWords = prevLine.getTextLine(m.currLang).words;
         var newWords = [...prevWords, ...m.origWords];
         var textLine = new TextLine(m.currLang, null, null, newWords);
@@ -401,8 +424,8 @@ class Hello extends React.Component<{},{}> {
             this.lines.splice(m.linePos, 1);
         }
         var newWordPos = prevWords.length - (prevWords[0].isEmpty ? 1 : 0);
-        this.setSelection(prevLine, textLine, textLine.getWord(newWordPos));
-        return {action: EditorAction.JOIN, lang: m.currLang, linePos: m.linePos - 1, wordPos: newWordPos};
+        this.selection.set(prevLinePos, m.currLang, newWordPos);
+        return {action: EditorAction.JOIN, lang: m.currLang, linePos: prevLinePos, wordPos: newWordPos};
     }
 
     undoJoinLine(undoItem:EditorHistory) {
@@ -482,18 +505,17 @@ class Hello extends React.Component<{},{}> {
         console.log(e.keyCode);
 
         var handled = false;
-        if (!this.selectedLine || !this.selectedTextLine) {
-            this.selectedLine = this.lines[0];
-            this.selectedTextLine = this.selectedLine.en;
+        if (!this.selection.line || !this.selection.textLine) {
+            this.selection.set(0, 0, 0);
         }
 
         var modify:IModify = {
-            currLang: this.selectedTextLine.lang,
-            origWords: this.selectedTextLine.words,
-            wordPos: this.selectedTextLine.words.indexOf(this.selectedWord),
-            linePos: this.lines.indexOf(this.selectedLine),
-            line: this.selectedLine,
-            textLine: this.selectedTextLine
+            currLang: this.selection.lang,
+            origWords: this.selection.textLine.words,
+            wordPos: this.selection.wordPos,
+            linePos: this.selection.linePos,
+            line: this.selection.line,
+            textLine: this.selection.textLine
 
         };
 
@@ -526,53 +548,49 @@ class Hello extends React.Component<{},{}> {
 
         //left
         if (e.keyCode == 37 && modify.wordPos > 0) {
-            var pos = this.selectedTextLine.words.indexOf(this.selectedWord);
-            this.selectedWord = this.selectedTextLine.getWord(pos - 1);
+            this.selection.setWord(this.selection.wordPos - 1);
             handled = true;
         }
         //right
-        if (e.keyCode == 39 && modify.wordPos < this.selectedTextLine.words.length - 1) {
-            var pos = this.selectedTextLine.words.indexOf(this.selectedWord);
-            this.selectedWord = this.selectedTextLine.getWord(pos + 1);
+        if (e.keyCode == 39 && modify.wordPos < this.selection.textLine.words.length - 1) {
+            this.selection.setWord(this.selection.wordPos + 1);
             handled = true;
         }
         // up down
         if (e.keyCode == 38 || e.keyCode == 40) {
-            var pos = this.lines.indexOf(this.selectedLine);
-            if (pos == -1) {
-                throw new Error('Unexpected error: line not found. ' + JSON.stringify(this.selectedLine));
+            if (this.selection.linePos == -1) {
+                throw new Error('Unexpected error: line not found. ' + JSON.stringify(this.selection.line));
             }
             //up
             if (e.keyCode == 38) {
-                if (this.selectedTextLine.lang == Lang.EN) {
-                    if (pos <= 0) {
+                if (this.selection.textLine.lang == Lang.EN) {
+                    if (this.selection.linePos <= 0) {
                         return e.preventDefault();
                     }
-                    this.selectedLine = this.lines[pos - 1];
+                    this.selection.setLine(this.selection.linePos - 1);
                 }
             }
             //down
             if (e.keyCode == 40) {
-                if (this.selectedTextLine.lang == Lang.RU) {
-                    if (pos >= this.lines.length - 1) {
+                if (this.selection.textLine.lang == Lang.RU) {
+                    if (this.selection.linePos >= this.lines.length - 1) {
                         return e.preventDefault();
                     }
-                    this.selectedLine = this.lines[pos + 1];
+                    this.selection.setLine(this.selection.linePos + 1);
                 }
             }
-            var oldTextLine = this.selectedTextLine;
-            if (this.selectedTextLine.lang == Lang.EN) {
-                this.selectedTextLine = this.selectedLine.ru;
+            if (this.selection.textLine.lang == Lang.EN) {
+                this.selection.setLang(Lang.RU)
             } else {
-                this.selectedTextLine = this.selectedLine.en;
+                this.selection.setLang(Lang.EN);
             }
-            this.selectedWord = this.findClosestNextWord(this.selectedWord, this.selectedTextLine);
+            this.selection.setWord(this.findClosestNextWord(this.selection.word, this.selection.textLine));
             handled = true;
         }
         if (handled) {
             this.forceUpdate();
 
-            var wordSpan = this.selectedWord.span as HTMLElement;
+            var wordSpan = this.selection.word.span as HTMLElement;
             var rect = wordSpan.getBoundingClientRect();
 
             if (rect.top < 0) {
@@ -591,43 +609,39 @@ class Hello extends React.Component<{},{}> {
     }
 
     spanClassName(textLine:TextLine, word:Word) {
-        return classNames({'selected': this.selectedWord == word && this.selectedTextLine == textLine});
+        return classNames({'selected': this.selection.word == word && this.selection.textLine == textLine});
     }
 
     setWordNode(word:Word, node:React.DOMComponent<{}>) {
         word.span = React.findDOMNode(node);
     }
 
-    wordClick(e:React.MouseEvent, line:Line, textLine:TextLine, word:Word, wordPos:number) {
-        this.selectedLine = line;
-        this.selectedTextLine = textLine;
-        //this.selectedWordPos = wordPos;
-        this.selectedWord = word;
+    wordClick(e:React.MouseEvent, linePos:number, lang:Lang, wordPos:number) {
+        this.selection.set(linePos, lang, wordPos);
         this.forceUpdate();
         e.preventDefault();
         e.stopPropagation();
     }
 
-    textLineClick(line:Line, textLine:TextLine) {
-        this.selectedTextLine = textLine;
-        this.selectedLine = line;
-        this.selectedWord = textLine.getWord(0);
+    textLineClick(linePos:number, lang:Lang) {
+        this.selection.set(linePos, lang, 0);
+
         //this.selectedWordPos = 0;
         this.forceUpdate()
     }
 
     render() {
         return <div>
-            {this.lines.map(line => <div className="line">
-                <div className="textline en" onClick={()=>this.textLineClick(line, line.en)}>
-                    {line.en.words.map((w,i) =>
+            {this.lines.map((line,linePos) => <div className="line">
+                <div className="textline en" onClick={()=>this.textLineClick(linePos,Lang.EN)}>
+                    {line.en.words.map((w,wordPos) =>
                     <span className={this.spanClassName(line.en, w)} ref={node => this.setWordNode(w, node)}
-                          onClick={e=>this.wordClick(e, line, line.en, w, i)}>{w.word}</span>)}
+                          onClick={e=>this.wordClick(e, linePos, Lang.EN, wordPos)}>{w.word}</span>)}
                 </div>
-                <div className="textline ru" onClick={()=>this.textLineClick(line, line.ru)}>
-                    {line.ru.words.map((w,i) =>
+                <div className="textline ru" onClick={()=>this.textLineClick(linePos, Lang.RU)}>
+                    {line.ru.words.map((w,wordPos) =>
                     <span className={this.spanClassName(line.ru, w)} ref={node => this.setWordNode(w, node)}
-                          onClick={e=>this.wordClick(e, line, line.ru, w, i)}>{w.word}</span>)}
+                          onClick={e=>this.wordClick(e, linePos, Lang.RU, wordPos)}>{w.word}</span>)}
                 </div>
             </div>)}
         </div>
