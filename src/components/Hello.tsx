@@ -348,10 +348,25 @@ class Selection {
         this.textLine = this.line.getTextLine(lang);
     }
 
+    invertLang() {
+        this.setLang(this.lang == Lang.EN ? Lang.RU : Lang.EN);
+    }
+
     setWord(wordPos:number) {
         this.wordPos = wordPos;
         this.word = this.textLine.getWord(wordPos);
     }
+
+}
+
+enum KeyCodes{
+    ENTER     = 13,
+    BACKSPACE = 8,
+    UP        = 38,
+    DOWN      = 40,
+    RIGHT     = 39,
+    LEFT      = 37,
+    Z         = 90,
 
 }
 
@@ -501,8 +516,32 @@ class Hello extends React.Component<{},{}> {
         }
     }
 
+    up() {
+        if (this.selection.lang == Lang.EN) {
+            if (this.selection.linePos <= 0) {
+                return false;
+            }
+            this.selection.setLine(this.selection.linePos - 1);
+        }
+        this.selection.invertLang();
+        this.selection.setWord(this.findClosestNextWord(this.selection.word, this.selection.textLine));
+        return true;
+    }
+
+    down() {
+        if (this.selection.lang == Lang.RU) {
+            if (this.selection.linePos >= this.lines.length - 1) {
+                return false;
+            }
+            this.selection.setLine(this.selection.linePos + 1);
+        }
+        this.selection.invertLang();
+        this.selection.setWord(this.findClosestNextWord(this.selection.word, this.selection.textLine));
+        return true;
+    }
+
     keyHandler = (e:KeyboardEvent) => {
-        console.log(e.keyCode);
+        //console.log(e.keyCode);
 
         var handled = false;
         if (!this.selection.line || !this.selection.textLine) {
@@ -516,11 +555,11 @@ class Hello extends React.Component<{},{}> {
             linePos: this.selection.linePos,
             line: this.selection.line,
             textLine: this.selection.textLine
-
         };
 
-        //enter without shift
-        if (e.keyCode == 13) {
+        var keyCode = e.keyCode;
+        var isCtrl = e.metaKey || e.ctrlKey;
+        if (keyCode == KeyCodes.ENTER) {
             if (e.shiftKey) {
                 this.addUndo(this.splitIntoNewLine(modify));
             }
@@ -530,8 +569,7 @@ class Hello extends React.Component<{},{}> {
             handled = true;
         }
 
-        //backspace
-        if (e.keyCode == 8) {
+        if (keyCode == KeyCodes.BACKSPACE) {
             if (e.shiftKey) {
                 this.addUndo(this.joinLine(modify));
             }
@@ -541,67 +579,61 @@ class Hello extends React.Component<{},{}> {
             handled = true;
         }
 
-        if (e.keyCode == 90 && (e.metaKey || e.ctrlKey)) {
+        if (keyCode == KeyCodes.Z && isCtrl) {
             this.undo();
             handled = true;
         }
 
-        //left
-        if (e.keyCode == 37 && modify.wordPos > 0) {
-            this.selection.setWord(this.selection.wordPos - 1);
+        if (keyCode == KeyCodes.LEFT) {
+            this.left();
             handled = true;
         }
-        //right
-        if (e.keyCode == 39 && modify.wordPos < this.selection.textLine.words.length - 1) {
-            this.selection.setWord(this.selection.wordPos + 1);
+        if (keyCode == KeyCodes.RIGHT) {
+            this.right();
             handled = true;
         }
-        // up down
-        if (e.keyCode == 38 || e.keyCode == 40) {
-            if (this.selection.linePos == -1) {
-                throw new Error('Unexpected error: line not found. ' + JSON.stringify(this.selection.line));
-            }
-            //up
-            if (e.keyCode == 38) {
-                if (this.selection.textLine.lang == Lang.EN) {
-                    if (this.selection.linePos <= 0) {
-                        return e.preventDefault();
-                    }
-                    this.selection.setLine(this.selection.linePos - 1);
-                }
-            }
-            //down
-            if (e.keyCode == 40) {
-                if (this.selection.textLine.lang == Lang.RU) {
-                    if (this.selection.linePos >= this.lines.length - 1) {
-                        return e.preventDefault();
-                    }
-                    this.selection.setLine(this.selection.linePos + 1);
-                }
-            }
-            if (this.selection.textLine.lang == Lang.EN) {
-                this.selection.setLang(Lang.RU)
-            } else {
-                this.selection.setLang(Lang.EN);
-            }
-            this.selection.setWord(this.findClosestNextWord(this.selection.word, this.selection.textLine));
+        if (keyCode == KeyCodes.UP) {
+            this.up();
             handled = true;
         }
+        if (keyCode == KeyCodes.DOWN) {
+            this.down();
+            handled = true;
+        }
+
         if (handled) {
             this.forceUpdate();
-
-            var wordSpan = this.selection.word.span as HTMLElement;
-            var rect = wordSpan.getBoundingClientRect();
-
-            if (rect.top < 0) {
-                wordSpan.scrollIntoView(true);
-            }
-            if (rect.bottom > (window.innerHeight || document.documentElement.clientHeight)) {
-                wordSpan.scrollIntoView(false);
-            }
-
             e.preventDefault();
+            this.scroll();
         }
+    };
+
+    private scroll() {
+        var wordSpan = this.selection.word.span as HTMLElement;
+        var rect = wordSpan.getBoundingClientRect();
+
+        if (rect.top < 0) {
+            wordSpan.scrollIntoView(true);
+        }
+        if (rect.bottom > (window.innerHeight || document.documentElement.clientHeight)) {
+            wordSpan.scrollIntoView(false);
+        }
+    };
+
+    private left() {
+        if (this.selection.wordPos <= 0) {
+            return false;
+        }
+        this.selection.setWord(this.selection.wordPos - 1);
+        return true;
+    };
+
+    private right() {
+        if (this.selection.wordPos >= this.selection.textLine.words.length - 1) {
+            return false;
+        }
+        this.selection.setWord(this.selection.wordPos + 1);
+        return true;
     };
 
     componentDidMount() {
