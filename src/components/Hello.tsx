@@ -238,10 +238,6 @@ class Line {
             this.ru = textLine;
         }
     }
-
-    getInvertTextLine(lang:Lang) {
-        return lang == Lang.RU ? this.en : this.ru;
-    }
 }
 
 const enum Lang{
@@ -298,15 +294,6 @@ var lines = enLinesS.map((lineS, i) =>
     new Line(
         new TextLine(Lang.EN, null, null, lineS.split(/\s+/).map(w => new Word(w))),
         new TextLine(Lang.RU, null, null, ruLinesS[i].split(/\s+/).map(w => new Word(w)))));
-
-interface IModify {
-    line:Line;
-    linePos:number;
-    textLine:TextLine;
-    origWords:Word[];
-    currLang:Lang;
-    wordPos:number
-}
 
 const enum EditorAction{
     SPLIT      = 1,
@@ -384,90 +371,96 @@ class Hello extends React.Component<{},{}> {
         }).sort((a, b) => a.diff < b.diff ? -1 : 1).shift().pos;
     }
 
-    splitWithMove(m:IModify) {
+    splitWithMove() {
+        var sel = this.selection;
+        var origWords = sel.textLine.words.slice();
+
         var lastLine = this.lines[this.lines.length - 1];
-        if (!lastLine.getTextLine(m.currLang).isEmpty()) {
+        if (!lastLine.getTextLine(sel.lang).isEmpty()) {
             this.lines.push(new Line());
         }
-        for (var i = this.lines.length - 1; i > m.linePos; i--) {
-            this.lines[i].setTextLine(m.currLang, this.lines[i - 1].getTextLine(m.currLang));
+        for (var i = this.lines.length - 1; i > sel.linePos; i--) {
+            this.lines[i].setTextLine(sel.lang, this.lines[i - 1].getTextLine(sel.lang));
         }
-        m.line.setTextLine(m.currLang, new TextLine(m.currLang, null, null, m.origWords.slice(0, m.wordPos)));
+        sel.line.setTextLine(sel.lang, new TextLine(sel.lang, null, null, origWords.slice(0, sel.wordPos)));
 
-        var nextLinePos = m.linePos + 1;
+        var nextLinePos = sel.linePos + 1;
         var newLine = this.lines[nextLinePos];
-        var selLine = newLine.getTextLine(m.currLang);
-        selLine.setWords(m.origWords.slice(m.wordPos));
+        var selLine = newLine.getTextLine(sel.lang);
+        selLine.setWords(origWords.slice(sel.wordPos));
 
-        this.selection.set(nextLinePos, m.currLang, 0);
-        return {action: EditorAction.SPLIT_MOVE, lang: m.currLang, linePos: nextLinePos, wordPos: 0};
+        this.selection.set(nextLinePos, sel.lang, 0);
+        return {action: EditorAction.SPLIT_MOVE, lang: sel.lang, linePos: nextLinePos, wordPos: 0};
     }
 
     undoSplitWithMove(undoItem:EditorHistory) {
-        this.joinLineWithMove(this.undoToModify(undoItem));
+        this.undoToModify(undoItem);
+        this.joinLineWithMove();
     }
 
-    splitIntoNewLine(m:IModify) {
-        m.textLine.setWords(m.origWords.slice(0, m.wordPos));
-        var nextLinePos = m.linePos + 1;
+    splitIntoNewLine() {
+        var sel = this.selection;
+        var origWords = sel.textLine.words.slice();
+
+        sel.textLine.setWords(origWords.slice(0, sel.wordPos));
+        var nextLinePos = sel.linePos + 1;
         var nextLine = this.lines[nextLinePos];
-        if (!nextLine.getTextLine(m.currLang).isEmpty()) {
+        if (!nextLine.getTextLine(sel.lang).isEmpty()) {
             nextLine = new Line();
             this.lines.splice(nextLinePos, 0, nextLine);
         }
-        nextLine.getTextLine(m.currLang).setWords(m.origWords.slice(m.wordPos));
-        this.selection.set(nextLinePos, m.currLang, 0);
-        return {action: EditorAction.SPLIT, lang: m.currLang, linePos: nextLinePos, wordPos: 0};
+        nextLine.getTextLine(sel.lang).setWords(origWords.slice(sel.wordPos));
+        this.selection.set(nextLinePos, sel.lang, 0);
+        return {action: EditorAction.SPLIT, lang: sel.lang, linePos: nextLinePos, wordPos: 0};
     }
 
     undoSplitIntoNewLine(undoItem:EditorHistory) {
-        this.joinLine(this.undoToModify(undoItem));
+        this.undoToModify(undoItem);
+        this.joinLine();
     }
 
-    joinLine(m:IModify) {
-        if (m.linePos < 1) {
+    joinLine() {
+        var sel = this.selection;
+        var origWords = sel.textLine.words.slice();
+
+        if (sel.linePos < 1) {
             return null;
         }
-        var prevLinePos = m.linePos - 1;
+        var prevLinePos = sel.linePos - 1;
         var prevLine = this.lines[prevLinePos];
-        var prevWords = prevLine.getTextLine(m.currLang).words;
-        var newWords = [...prevWords, ...m.origWords];
-        var textLine = new TextLine(m.currLang, null, null, newWords);
-        prevLine.setTextLine(m.currLang, textLine);
-        m.textLine.setWords(null);
-        if (m.line.isEmpty()) {
-            this.lines.splice(m.linePos, 1);
+        var prevWords = prevLine.getTextLine(sel.lang).words;
+        var newWords = [...prevWords, ...origWords];
+        var textLine = new TextLine(sel.lang, null, null, newWords);
+        prevLine.setTextLine(sel.lang, textLine);
+        sel.textLine.setWords(null);
+        if (sel.line.isEmpty()) {
+            this.lines.splice(sel.linePos, 1);
         }
         var newWordPos = prevWords.length - (prevWords[0].isEmpty ? 1 : 0);
-        this.selection.set(prevLinePos, m.currLang, newWordPos);
-        return {action: EditorAction.JOIN, lang: m.currLang, linePos: prevLinePos, wordPos: newWordPos};
+        this.selection.set(prevLinePos, sel.lang, newWordPos);
+        return {action: EditorAction.JOIN, lang: sel.lang, linePos: prevLinePos, wordPos: newWordPos};
     }
 
     undoJoinLine(undoItem:EditorHistory) {
-        this.splitIntoNewLine(this.undoToModify(undoItem));
+        this.undoToModify(undoItem);
+        this.splitIntoNewLine();
     }
 
     undoToModify(undoItem:EditorHistory) {
-        var line = this.lines[undoItem.linePos];
-        var textLine = line.getTextLine(undoItem.lang);
-        return {
-            line: line,
-            linePos: undoItem.linePos,
-            textLine: textLine,
-            origWords: textLine.words,
-            currLang: undoItem.lang,
-            wordPos: undoItem.wordPos
-        };
+        this.selection.set(undoItem.linePos, undoItem.lang, undoItem.wordPos);
     }
 
-    joinLineWithMove(m:IModify) {
-        var undo = this.joinLine(m);
+    joinLineWithMove() {
+        var lang = this.selection.lang;
+        var linePos = this.selection.linePos;
+
+        var undo = this.joinLine();
         if (undo) {
-            for (var i = m.linePos + 1; i < this.lines.length; i++) {
-                this.lines[i - 1].setTextLine(m.currLang, this.lines[i].getTextLine(m.currLang));
+            for (var i = linePos + 1; i < this.lines.length; i++) {
+                this.lines[i - 1].setTextLine(lang, this.lines[i].getTextLine(lang));
             }
             var lastLine = this.lines[this.lines.length - 1];
-            lastLine.setTextLine(m.currLang, new TextLine(m.currLang, null, null, null));
+            lastLine.setTextLine(lang, new TextLine(lang, null, null, null));
             if (lastLine.isEmpty()) {
                 this.lines.pop();
             }
@@ -477,13 +470,8 @@ class Hello extends React.Component<{},{}> {
     }
 
     undoJoinLineWithMove(undoItem:EditorHistory) {
-        this.splitWithMove(this.undoToModify(undoItem));
-        /*this.splitWithMove(this.undoToModify({
-            action: undoItem.action,
-            linePos: undoItem.linePos,
-            lang: undoItem.lang,
-            wordPos: undoItem.wordPos
-        }));*/
+        this.undoToModify(undoItem);
+        this.splitWithMove();
     }
 
     addUndo(undo:EditorHistory) {
@@ -548,33 +536,24 @@ class Hello extends React.Component<{},{}> {
             this.selection.set(0, 0, 0);
         }
 
-        var modify:IModify = {
-            currLang: this.selection.lang,
-            origWords: this.selection.textLine.words,
-            wordPos: this.selection.wordPos,
-            linePos: this.selection.linePos,
-            line: this.selection.line,
-            textLine: this.selection.textLine
-        };
-
         var keyCode = e.keyCode;
         var isCtrl = e.metaKey || e.ctrlKey;
         if (keyCode == KeyCodes.ENTER) {
             if (e.shiftKey) {
-                this.addUndo(this.splitIntoNewLine(modify));
+                this.addUndo(this.splitIntoNewLine());
             }
             else {
-                this.addUndo(this.splitWithMove(modify));
+                this.addUndo(this.splitWithMove());
             }
             handled = true;
         }
 
         if (keyCode == KeyCodes.BACKSPACE) {
             if (e.shiftKey) {
-                this.addUndo(this.joinLine(modify));
+                this.addUndo(this.joinLine());
             }
             else {
-                this.addUndo(this.joinLineWithMove(modify));
+                this.addUndo(this.joinLineWithMove());
             }
             handled = true;
         }
@@ -583,7 +562,6 @@ class Hello extends React.Component<{},{}> {
             this.undo();
             handled = true;
         }
-
         if (keyCode == KeyCodes.LEFT) {
             this.left();
             handled = true;
